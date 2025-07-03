@@ -1,61 +1,46 @@
-name: "AI Agent CI/CD Pipeline"
-
-on:
-  workflow_dispatch:
-  push:
-    branches:
+trigger:
+  branches:
+    include:
       - main
 
-permissions:
-  id-token: write
-  contents: read
+variables:
+  azureSubscription: 'AzurePipeline'
+  resourceGroup: 'rg-Myagent'
+  containerAppName: 'ca-api-btwsshlh5cluo'
+  acrName: 'testagent93'
+  imageName: 'entra-agent-ui'
+  containerName: 'entra-agent'  # Replace with your actual container name if different
 
-jobs:
-  build-and-deploy:
-    runs-on: ubuntu-latest
+pool:
+  vmImage: 'ubuntu-latest'
 
-    steps:
-      - name: Checkout Source Code
-        uses: actions/checkout@v4
+steps:
+# Step 1: Azure login to access ACR
+- task: AzureCLI@2
+  inputs:
+    azureSubscription: '$(azureSubscription)'
+    scriptType: 'bash'
+    scriptLocation: 'inlineScript'
+    inlineScript: |
+      az acr login --name $(acrName)
+  displayName: 'Login to Azure Container Registry'
 
-      - name: Azure Login via Federated Credentials
-        uses: azure/login@v2
-        with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+# Step 2: Build and push Docker image (frontend build is inside Dockerfile)
+- script: |
+    docker build -f src/Dockerfile -t $(acrName).azurecr.io/$(imageName):$(Build.BuildId) .
+    docker push $(acrName).azurecr.io/$(imageName):$(Build.BuildId)
+  displayName: 'Build and Push Docker Image'
 
-      - name: Deploy to Azure Container App
-        uses: azure/container-apps-deploy-action@v2
-        with:
-          acrName: ${{ vars.AZURE_ACR_NAME }}
-          registryUrl: ${{ vars.AZURE_ACR_NAME }}.azurecr.io
-          containerAppName: ${{ vars.AZURE_CONTAINER_APP_NAME }}
-          resourceGroup: ${{ vars.AZURE_RESOURCE_GROUP }}
-          imageToBuild: ${{ vars.AZURE_ACR_NAME }}.azurecr.io/${{ github.repository }}:${{ github.sha }}
-          dockerfilePath: 'src/Dockerfile'
-          appSourcePath: 'src'
-          location: ${{ vars.AZURE_LOCATION }}
-
-  run-evaluation:
-    runs-on: ubuntu-latest
-    needs: build-and-deploy
-
-    steps:
-      - name: Checkout Evaluation Data
-        uses: actions/checkout@v4
-
-      - name: Azure Login for Evaluation
-        uses: azure/login@v2
-        with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Run AI Agent Evaluation
-        uses: microsoft/ai-agent-evals@v2-beta
-        with:
-          azure-ai-project-endpoint: ${{ vars.AZURE_EXISTING_AIPROJECT_ENDPOINT }}
-          deployment-name: ${{ vars.AZURE_AI_AGENT_DEPLOYMENT_NAME }}
-          agent-ids: ${{ vars.AZURE_EXISTING_AGENT_ID }}
-          data-path: ${{ github.workspace }}/evals/eval-action-data-path.json
+# Step 3: Deploy to Azure Container App
+- task: AzureCLI@2
+  inputs:
+    azureSubscription: '$(azureSubscription)'
+    scriptType: 'bash'
+    scriptLocation: 'inlineScript'
+    inlineScript: |
+      az containerapp update \
+        --name $(containerAppName) \
+        --resource-group $(resourceGroup) \
+        --image $(acrName).azurecr.io/$(imageName):$(Build.BuildId) \
+        --container-name $(containerName)
+  displayName: 'Deploy to Azure Container App'
