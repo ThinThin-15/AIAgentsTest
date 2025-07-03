@@ -4,7 +4,7 @@ trigger:
       - main
 
 variables:
-  azureSubscription: 'AzurePipeline'
+  azureSubscription: 'c0a6e7b6-1a69-4957-940d-2f1eb4478ad4'
   resourceGroup: 'rg-Myagent'
   containerAppName: 'ca-api-btwsshlh5cluo'
   acrName: 'testagent93'
