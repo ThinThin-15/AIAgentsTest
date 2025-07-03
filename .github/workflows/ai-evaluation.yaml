@@ -1,4 +1,4 @@
-name: "AI Agent Evaluation"
+name: "AI Agent CI/CD Pipeline"
 
 on:
   workflow_dispatch:
@@ -11,20 +11,48 @@ permissions:
   contents: read
 
 jobs:
-  run-action:
+  build-and-deploy:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout
+      - name: Checkout Source Code
         uses: actions/checkout@v4
 
-      - name: Azure login using Federated Credentials
+      - name: Azure Login via Federated Credentials
         uses: azure/login@v2
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Run Evaluation
+      - name: Deploy to Azure Container App
+        uses: azure/container-apps-deploy-action@v2
+        with:
+          acrName: ${{ vars.AZURE_ACR_NAME }}
+          registryUrl: ${{ vars.AZURE_ACR_NAME }}.azurecr.io
+          containerAppName: ${{ vars.AZURE_CONTAINER_APP_NAME }}
+          resourceGroup: ${{ vars.AZURE_RESOURCE_GROUP }}
+          imageToBuild: ${{ vars.AZURE_ACR_NAME }}.azurecr.io/${{ github.repository }}:${{ github.sha }}
+          dockerfilePath: 'src/Dockerfile'
+          appSourcePath: 'src'
+          location: ${{ vars.AZURE_LOCATION }}
+
+  run-evaluation:
+    runs-on: ubuntu-latest
+    needs: build-and-deploy
+
+    steps:
+      - name: Checkout Evaluation Data
+        uses: actions/checkout@v4
+
+      - name: Azure Login for Evaluation
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Run AI Agent Evaluation
         uses: microsoft/ai-agent-evals@v2-beta
         with:
           azure-ai-project-endpoint: ${{ vars.AZURE_EXISTING_AIPROJECT_ENDPOINT }}
